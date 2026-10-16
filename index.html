@@ -1,0 +1,1583 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
+  <title>MPEG-2 Free Dish Set-Top Box TV</title>
+  <script src="https://cdn.jsdelivr.net/npm/hls.js@latest"></script>
+  <style>
+    * {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+      user-select: none;
+      -webkit-user-select: none;
+      font-family: "Lucida Console", Monaco, monospace, sans-serif;
+    }
+
+    html, body {
+      background-color: #050505;
+      color: #ffffff;
+      width: 100vw;
+      height: 100vh;
+      height: 100dvh;
+      overflow: hidden;
+      display: flex;
+      justify-content: center;
+      align-items: center;
+    }
+
+    .tv-screen {
+      position: relative;
+      width: 100%;
+      height: 100%;
+      background: #000;
+      border: 3px solid #8ecae6;
+      overflow: hidden;
+    }
+
+    /* Video / Radio Preview Box */
+    #video-container {
+      position: absolute;
+      top: 13%;
+      left: 42.5%;
+      width: 55.5%;
+      height: 52%;
+      background: #000;
+      border: 3px solid #b8e2f2;
+      z-index: 5;
+      overflow: hidden;
+    }
+
+    .tv-screen.fullscreen-mode #video-container {
+      top: 0;
+      left: 0;
+      width: 100%;
+      height: 100%;
+      border: none;
+      z-index: 1;
+    }
+
+    video {
+      width: 100%;
+      height: 100%;
+      object-fit: fill;
+      background: #000;
+    }
+
+    /* Hide video visuals completely when in Radio Mode (Audio continues playing) */
+    #video-container.radio-audio-only video {
+      opacity: 0;
+      pointer-events: none;
+    }
+
+    video::-webkit-media-controls {
+      display: none !important;
+    }
+
+    /* Retro Set-Top Box Radio Screen Overlay (Shown in Radio Mode so no video is visible) */
+    #radio-screen-bg {
+      position: absolute;
+      inset: 0;
+      background: radial-gradient(circle at center, #0d4a8a 0%, #041f42 75%, #021126 100%);
+      display: none;
+      flex-direction: column;
+      justify-content: center;
+      align-items: center;
+      z-index: 4;
+      color: #b8e2f2;
+      text-align: center;
+      padding: 12px;
+    }
+
+    #video-container.radio-audio-only #radio-screen-bg {
+      display: flex;
+    }
+
+    .radio-emblem {
+      border: 2px solid #8ecae6;
+      background: rgba(4, 31, 66, 0.85);
+      padding: 10px 24px;
+      border-radius: 6px;
+      box-shadow: inset 0 0 12px rgba(142, 202, 230, 0.3);
+    }
+
+    .radio-emblem-title {
+      font-size: clamp(1rem, 2.8vw, 1.5rem);
+      font-weight: bold;
+      color: #f5e625;
+      letter-spacing: 3px;
+      margin-bottom: 6px;
+    }
+
+    .radio-waves {
+      display: flex;
+      justify-content: center;
+      align-items: flex-end;
+      gap: 5px;
+      height: 24px;
+      margin-top: 6px;
+    }
+
+    .wave-bar {
+      width: 6px;
+      background: #52b788;
+      animation: eqAnim 0.8s infinite ease-in-out alternate;
+    }
+
+    .wave-bar:nth-child(2) { animation-delay: 0.2s; }
+    .wave-bar:nth-child(3) { animation-delay: 0.4s; }
+    .wave-bar:nth-child(4) { animation-delay: 0.1s; }
+    .wave-bar:nth-child(5) { animation-delay: 0.3s; }
+
+    @keyframes eqAnim {
+      0% { height: 5px; background: #2da4c8; }
+      100% { height: 22px; background: #f5e625; }
+    }
+
+    /* No Signal Box */
+    #no-signal {
+      position: absolute;
+      top: 50%;
+      left: 50%;
+      transform: translate(-50%, -50%);
+      background-color: #2da4c8;
+      border: 2px solid #b8e2f2;
+      color: #051a2e;
+      font-weight: bold;
+      font-size: clamp(0.85rem, 2.2vw, 1.2rem);
+      padding: 8px 32px;
+      letter-spacing: 1px;
+      display: none;
+      z-index: 6;
+      white-space: nowrap;
+      box-shadow: 0 0 10px rgba(0, 0, 0, 0.9);
+    }
+
+    /* Right-side Option Modal */
+    #option-panel {
+      position: absolute;
+      top: 13%;
+      left: 42.5%;
+      width: 55.5%;
+      height: 71%;
+      background: linear-gradient(180deg, #094a8c 0%, #052c57 100%);
+      border: 3px solid #b8e2f2;
+      z-index: 8;
+      display: none;
+      flex-direction: column;
+      justify-content: space-between;
+      padding: 10px 14px;
+      color: #e0f4ff;
+      font-size: clamp(0.75rem, 1.9vw, 1rem);
+    }
+
+    .opt-row {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      padding: 5px 8px;
+      border-bottom: 1px solid rgba(142, 202, 230, 0.3);
+      cursor: pointer;
+    }
+
+    .opt-row.highlight {
+      background: #f5e625;
+      color: #000;
+      font-weight: bold;
+      border-radius: 3px;
+    }
+
+    .bar-wrap {
+      width: 100%;
+      background: #031a33;
+      border: 1px solid #8ecae6;
+      height: 14px;
+      margin-top: 3px;
+      position: relative;
+    }
+
+    .bar-fill {
+      height: 100%;
+      background: linear-gradient(90deg, #2ec4b6, #80ed99);
+      width: 85%;
+    }
+
+    /* OSD Frame */
+    #osd-frame {
+      position: absolute;
+      inset: 0;
+      background: linear-gradient(180deg, #0b4a8b 0%, #06386e 85%, #04264d 100%);
+      display: flex;
+      flex-direction: column;
+      justify-content: space-between;
+      z-index: 2;
+      overflow: hidden;
+    }
+
+    .tv-screen.fullscreen-mode #osd-frame {
+      display: none;
+    }
+
+    /* Top Header Bar */
+    .osd-header {
+      height: 10.5%;
+      flex-shrink: 0;
+      background: linear-gradient(90deg, #b8e2f2 0%, #90cbe0 60%, #094f94 62%, #0b5fb0 100%);
+      border-bottom: 2px solid #d4f0fc;
+      display: flex;
+      align-items: center;
+      padding: 0 14px;
+      color: #082947;
+      font-size: clamp(0.95rem, 2.5vw, 1.3rem);
+      font-weight: bold;
+      letter-spacing: 1px;
+    }
+
+    .header-icon {
+      display: inline-flex;
+      justify-content: center;
+      align-items: center;
+      width: 22px;
+      height: 22px;
+      background: #094f94;
+      color: #b8e2f2;
+      border-radius: 50%;
+      margin-right: 10px;
+      font-size: 0.8rem;
+      flex-shrink: 0;
+    }
+
+    /* Middle Area */
+    .osd-body {
+      flex: 1;
+      min-height: 0;
+      display: flex;
+      padding: 5px 10px;
+      gap: 12px;
+      position: relative;
+      overflow: hidden;
+    }
+
+    /* Left Panel */
+    .left-panel {
+      width: 40.5%;
+      height: 100%;
+      display: flex;
+      flex-direction: column;
+      gap: 2px;
+      overflow-y: auto;
+      overflow-x: hidden;
+      -webkit-overflow-scrolling: touch;
+      padding-right: 2px;
+    }
+
+    .left-panel.no-scroll {
+      overflow-y: hidden;
+    }
+
+    .left-panel::-webkit-scrollbar {
+      width: 4px;
+    }
+
+    .left-panel::-webkit-scrollbar-track {
+      background: #04264d;
+    }
+
+    .left-panel::-webkit-scrollbar-thumb {
+      background: #8ecae6;
+      border-radius: 2px;
+    }
+
+    .list-item {
+      height: calc((100% - 18px) / 10);
+      min-height: 24px;
+      flex-shrink: 0;
+      background: linear-gradient(180deg, #0d5aa8 0%, #084382 100%);
+      border: 1.5px solid #1b74cc;
+      border-radius: 4px;
+      display: flex;
+      align-items: center;
+      padding: 0 10px;
+      font-size: clamp(0.76rem, 1.9vw, 1.05rem);
+      color: #e0f4ff;
+      cursor: pointer;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      letter-spacing: 0.5px;
+    }
+
+    .list-item.menu-mode-item {
+      flex: 1;
+      height: auto;
+      min-height: 0;
+      justify-content: center;
+      font-size: clamp(0.75rem, 1.95vw, 1.1rem);
+    }
+
+    .list-item.active {
+      background: linear-gradient(180deg, #f5e625 0%, #d4be06 100%);
+      color: #0a0a0a;
+      font-weight: bold;
+      border-color: #ffffff;
+    }
+
+    .ch-num {
+      width: 42px;
+      display: inline-block;
+      flex-shrink: 0;
+    }
+
+    /* Right Panel Details */
+    .right-panel {
+      flex: 1;
+      height: 100%;
+      display: flex;
+      flex-direction: column;
+      justify-content: flex-end;
+      pointer-events: none;
+    }
+
+    .preview-bottom-bar {
+      background: #b8e2f2;
+      height: 18px;
+      width: 100%;
+      margin-bottom: 4px;
+      display: flex;
+      align-items: center;
+      padding: 0 10px;
+      border: 2px solid #ffffff;
+    }
+
+    .green-dot {
+      width: 14px;
+      height: 10px;
+      background: radial-gradient(circle, #52b788 0%, #1b4332 100%);
+      border-radius: 50%;
+      border: 1px solid #081c15;
+    }
+
+    .transponder-info {
+      background: rgba(5, 38, 77, 0.9);
+      border-top: 2px solid #5aa9e6;
+      padding: 4px 10px;
+      display: grid;
+      grid-template-columns: 1.3fr 1fr;
+      row-gap: 2px;
+      font-size: clamp(0.75rem, 1.9vw, 1.05rem);
+      color: #e0f4ff;
+      letter-spacing: 0.5px;
+    }
+
+    /* AUTO SCAN FULL SCREEN VIEW */
+    #autoscan-view {
+      display: none;
+      width: 100%;
+      height: 100%;
+      flex-direction: column;
+      justify-content: space-between;
+      padding: 4px 14px;
+    }
+
+    .scan-top-grid {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 4px 10px;
+    }
+
+    .scan-param-box {
+      background: linear-gradient(180deg, #0d5aa8 0%, #073d78 100%);
+      border: 1.5px solid #2880d8;
+      border-radius: 5px;
+      padding: 3px 14px;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      font-size: clamp(0.8rem, 2.1vw, 1.15rem);
+      color: #e6f6ff;
+      font-weight: bold;
+      letter-spacing: 0.5px;
+    }
+
+    .scan-progress-row {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      margin: 4px 0;
+    }
+
+    .scan-bar-track {
+      flex: 1;
+      height: 16px;
+      background: #063060;
+      border: 1.5px solid #1c6ec4;
+      border-radius: 3px;
+      overflow: hidden;
+    }
+
+    .scan-bar-fill {
+      height: 100%;
+      width: 0%;
+      background: linear-gradient(180deg, #ffe14d 0%, #e8991c 100%);
+      border-right: 2px solid #fff;
+      transition: width 0.12s linear;
+    }
+
+    .scan-percent-txt {
+      width: 48px;
+      text-align: right;
+      font-size: clamp(0.85rem, 2.2vw, 1.2rem);
+      font-weight: bold;
+      color: #ffffff;
+    }
+
+    .scan-lists-grid {
+      flex: 1;
+      min-height: 0;
+      display: flex;
+      gap: 16px;
+    }
+
+    .scan-col {
+      flex: 1;
+      display: flex;
+      flex-direction: column;
+      min-height: 0;
+    }
+
+    .scan-col-header {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 8px;
+      font-size: clamp(0.82rem, 2.1vw, 1.15rem);
+      font-weight: bold;
+      color: #ffffff;
+      padding-bottom: 4px;
+    }
+
+    .tv-icon-box {
+      display: inline-block;
+      width: 18px;
+      height: 14px;
+      border: 2px solid #ffffff;
+      position: relative;
+    }
+    .tv-icon-box::before {
+      content: "";
+      position: absolute;
+      top: -5px;
+      left: 4px;
+      width: 6px;
+      height: 4px;
+      border-left: 2px solid #fff;
+      border-right: 2px solid #fff;
+      transform: skewX(15deg);
+    }
+
+    .radio-icon-box {
+      display: inline-block;
+      width: 18px;
+      height: 14px;
+      border: 2px solid #ffffff;
+      background: radial-gradient(circle at 70% 50%, #fff 2px, transparent 3px);
+    }
+
+    .scan-col-box {
+      flex: 1;
+      background: #041f42;
+      border: 1.5px solid #16569c;
+      padding: 6px 10px;
+      display: flex;
+      flex-direction: column;
+      justify-content: flex-start;
+      gap: 4px;
+      overflow-y: auto;
+    }
+
+    .scan-ch-row {
+      display: flex;
+      align-items: center;
+      font-size: clamp(0.78rem, 2vw, 1.1rem);
+      color: #ffffff;
+      font-weight: bold;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      letter-spacing: 0.5px;
+      flex-shrink: 0;
+    }
+
+    .scan-ch-num {
+      width: 50px;
+      flex-shrink: 0;
+    }
+
+    /* Bottom Footer Bar */
+    .osd-footer {
+      height: 12.5%;
+      min-height: 36px;
+      flex-shrink: 0;
+      background: linear-gradient(180deg, #8ecae6 0%, #68b0d4 100%);
+      border-top: 2px solid #d4f0fc;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 0 12px;
+      color: #06233d;
+      font-size: clamp(0.75rem, 1.9vw, 1.05rem);
+      font-weight: bold;
+      z-index: 10;
+    }
+
+    .footer-keys {
+      display: flex;
+      align-items: center;
+      gap: clamp(8px, 2.2vw, 22px);
+      flex-wrap: nowrap;
+    }
+
+    .key-group {
+      display: flex;
+      align-items: center;
+      gap: 4px;
+    }
+
+    .key-badge {
+      background: #073b6b;
+      color: #b8e2f2;
+      padding: 3px 8px;
+      border-radius: 4px;
+      font-size: clamp(0.7rem, 1.8vw, 0.95rem);
+      border: 1px solid #041f3a;
+      cursor: pointer;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+    }
+
+    .key-badge:active {
+      background: #f5e625;
+      color: #000;
+    }
+
+    .key-label {
+      cursor: pointer;
+      margin-left: 2px;
+    }
+
+    .info-circle {
+      width: 28px;
+      height: 28px;
+      border-radius: 50%;
+      background: #073b6b;
+      color: #b8e2f2;
+      display: flex;
+      justify-content: center;
+      align-items: center;
+      font-family: serif;
+      font-style: italic;
+      font-size: 1.1rem;
+      cursor: pointer;
+      flex-shrink: 0;
+    }
+
+    /* Fullscreen Info Banner */
+    #channel-banner {
+      position: absolute;
+      bottom: 5%;
+      left: 6%;
+      width: 82%;
+      background: linear-gradient(180deg, #0b4a8b 0%, #052c57 100%);
+      border: 2px solid #8ecae6;
+      z-index: 15;
+      display: none;
+      box-shadow: 0 4px 15px rgba(0, 0, 0, 0.8);
+    }
+
+    .banner-header {
+      background: linear-gradient(90deg, #b8e2f2 0%, #90cbe0 55%, #073b6b 57%, #094f94 100%);
+      padding: 4px 12px;
+      color: #06233d;
+      font-weight: bold;
+      font-size: clamp(0.85rem, 2vw, 1.1rem);
+      display: flex;
+      align-items: center;
+      border-bottom: 2px solid #d4f0fc;
+    }
+
+    .banner-body {
+      padding: 10px 16px;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      font-size: clamp(0.9rem, 2.2vw, 1.25rem);
+      color: #ffffff;
+    }
+
+    #game-canvas {
+      background: #031930;
+      border: 2px solid #8ecae6;
+      width: 100%;
+      height: 82%;
+      display: block;
+    }
+  </style>
+</head>
+<body>
+
+  <div class="tv-screen" id="tv-screen">
+    <!-- Video Container -->
+    <div id="video-container" onclick="toggleFullscreenFromPreview()">
+      <video id="tv-video" autoplay playsinline poster="data:image/gif;base64,R0lGODlhAQABAIAAAAUEBAAAACwAAAAAAQABAAACAkQBADs="></video>
+
+      <!-- Radio Mode Audio-Only Screen (Hides Video in Radio List) -->
+      <div id="radio-screen-bg">
+        <div class="radio-emblem">
+          <div class="radio-emblem-title">♫ RADIO</div>
+          <div id="radio-playing-name" style="font-size:0.85rem;color:#ffffff;">AIR NATIONAL</div>
+          <div class="radio-waves">
+            <div class="wave-bar"></div>
+            <div class="wave-bar"></div>
+            <div class="wave-bar"></div>
+            <div class="wave-bar"></div>
+            <div class="wave-bar"></div>
+          </div>
+        </div>
+      </div>
+
+      <div id="no-signal">No Signal</div>
+    </div>
+
+    <!-- Dedicated Right Panel for Menu Options -->
+    <div id="option-panel"></div>
+
+    <!-- Retro OSD Interface -->
+    <div id="osd-frame">
+      <div class="osd-header">
+        <span class="header-icon">➜</span>
+        <span id="osd-title">TV Channel List</span>
+      </div>
+
+      <div class="osd-body">
+        <!-- Standard Left/Right Split -->
+        <div class="left-panel" id="left-list"></div>
+
+        <div class="right-panel" id="right-panel">
+          <div class="preview-bottom-bar">
+            <div class="green-dot"></div>
+          </div>
+          <div class="transponder-info" id="tp-info">
+            <div>12020/V/30000</div>
+            <div>DiSEqC:Off</div>
+            <div>5064/6064</div>
+            <div>22K:Off</div>
+          </div>
+        </div>
+
+        <!-- Dedicated Auto Scan Full View -->
+        <div id="autoscan-view">
+          <div class="scan-top-grid">
+            <div class="scan-param-box"><span>INSAT 4B</span><span></span></div>
+            <div class="scan-param-box"><span>TP</span><span id="scan-tp">1</span></div>
+            <div class="scan-param-box"><span>LNB Freq</span><span id="scan-lnb">09750</span></div>
+            <div class="scan-param-box"><span>Symbol Rate</span><span id="scan-sr">28490</span></div>
+            <div class="scan-param-box"><span>Trans Freq</span><span id="scan-tf">10990</span></div>
+            <div class="scan-param-box"><span>Polarity</span><span id="scan-pol">H</span></div>
+          </div>
+
+          <div class="scan-progress-row">
+            <div class="scan-bar-track">
+              <div class="scan-bar-fill" id="scan-bar-fill"></div>
+            </div>
+            <div class="scan-percent-txt" id="scan-percent-txt">0%</div>
+          </div>
+
+          <div class="scan-lists-grid">
+            <div class="scan-col">
+              <div class="scan-col-header">
+                <span class="tv-icon-box"></span>
+                <span>TV Channel List</span>
+              </div>
+              <div class="scan-col-box" id="scan-tv-list"></div>
+            </div>
+
+            <div class="scan-col">
+              <div class="scan-col-header">
+                <span class="radio-icon-box"></span>
+                <span>Radio Channel List</span>
+              </div>
+              <div class="scan-col-box" id="scan-radio-list"></div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Footer -->
+      <div class="osd-footer">
+        <div class="footer-keys">
+          <div class="key-group" id="move-hint">
+            <span class="key-badge" onclick="moveSelection(-1)">▲</span>
+            <span class="key-badge" onclick="moveSelection(1)">▼</span>
+            <span class="key-label" id="lbl-move" onclick="moveSelection(1)">Select</span>
+          </div>
+
+          <div class="key-group" id="page-hint">
+            <span class="key-badge" onclick="handleLeftRight(-1)">◄</span>
+            <span class="key-badge" onclick="handleLeftRight(1)">►</span>
+            <span class="key-label" id="lbl-lr" onclick="handleLeftRight(1)">Page</span>
+          </div>
+
+          <div class="key-group" id="ok-hint" onclick="handleOkKey()">
+            <span class="key-badge">OK</span>
+            <span class="key-label" id="lbl-ok">Enter</span>
+          </div>
+
+          <div class="key-group" id="menu-hint" onclick="handleMenuKey()">
+            <span class="key-badge">MENU</span>
+            <span class="key-label" id="lbl-menu">Exit</span>
+          </div>
+        </div>
+
+        <div class="info-circle" onclick="showBanner()" title="Channel Info">i</div>
+      </div>
+    </div>
+
+    <!-- Fullscreen Bottom OSD Banner -->
+    <div id="channel-banner" onclick="handleOkKey()">
+      <div class="banner-header">
+        <span class="header-icon" style="width:18px;height:18px;font-size:0.7rem;">➜</span>
+        <span id="banner-type">TV Channel</span>
+      </div>
+      <div class="banner-body">
+        <span id="banner-ch-name">1. Loading...</span>
+        <span>Left Channel</span>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    const PLAYLIST_URL = "https://iptv-org.github.io/iptv/countries/in.m3u";
+    const ITEMS_PER_PAGE = 10;
+
+    const MENU_ITEMS = [
+      "TV List",
+      "Radio List",
+      "Program Setup",
+      "Program Edit",
+      "Program Info",
+      "Language",
+      "System Setting",
+      "Game",
+      "System Info",
+      "Cancel"
+    ];
+
+    const DEFAULT_RADIO_NAMES = [
+      "AIR VBS",
+      "AIR Telugu",
+      "AIR Marathi",
+      "AIR Tamil",
+      "AIR NATIONAL",
+      "FM RAINBOW K",
+      "AIR Gujarati",
+      "AIR Punjabi",
+      "AIR Bangla",
+      "FM GOLD",
+      "AIR Vividh Bharati",
+      "AIR Malayalam",
+      "AIR Kannada",
+      "AIR Odia",
+      "AIR Assamese",
+      "FM Rainbow Delhi",
+      "FM Gold Mumbai",
+      "AIR Urdu",
+      "AIR North East",
+      "AIR Ragam"
+    ];
+
+    // Master Lists (Full fetched M3U pool)
+    let masterTvChannels = [];
+    let masterRadioChannels = [];
+
+    // Currently Available Lists (Updated dynamically according to how much Auto Scan has completed)
+    let allChannels = [];
+    let radioChannels = [];
+    let activeList = [];
+    let isRadioMode = false;
+
+    let currentIndex = 0;
+    let playingIndex = -1;
+    let viewState = "LIST"; // "LIST", "MENU", "SUBMENU", "AUTOSCAN", "FULLSCREEN"
+    let activeSubMenu = "";
+    let menuIndex = 0;
+    let subMenuIndex = 0;
+
+    let appSettings = {
+      menuLang: "English",
+      audioLang: "Hindi",
+      tvSystem: "PAL",
+      aspectRatio: "Full (16:9)",
+      osdTimeout: "5 Sec",
+      lnbFreq: "09750",
+      transponder: "10990"
+    };
+
+    let hls = null;
+    let bannerTimeout = null;
+    let gameLoop = null;
+    let scanTimer = null;
+    let snakeDir = { x: 1, y: 0 };
+
+    const tvScreen = document.getElementById("tv-screen");
+    const leftList = document.getElementById("left-list");
+    const rightPanel = document.getElementById("right-panel");
+    const autoscanView = document.getElementById("autoscan-view");
+    const osdTitle = document.getElementById("osd-title");
+    const video = document.getElementById("tv-video");
+    const videoContainer = document.getElementById("video-container");
+    const radioPlayingName = document.getElementById("radio-playing-name");
+    const noSignalBox = document.getElementById("no-signal");
+    const optionPanel = document.getElementById("option-panel");
+    const tpInfo = document.getElementById("tp-info");
+    const channelBanner = document.getElementById("channel-banner");
+    const bannerChName = document.getElementById("banner-ch-name");
+
+    async function loadPlaylist() {
+      leftList.innerHTML = `<div class="list-item active">Loading Channels...</div>`;
+      try {
+        const res = await fetch(PLAYLIST_URL);
+        const text = await res.text();
+        const lines = text.split("\n");
+        let currentName = "";
+
+        for (let line of lines) {
+          line = line.trim();
+          if (line.startsWith("#EXTINF:")) {
+            const parts = line.split(",");
+            currentName = parts[parts.length - 1].trim() || "Unknown Channel";
+          } else if (line && !line.startsWith("#")) {
+            masterTvChannels.push({
+              name: currentName,
+              url: line,
+              fav: false,
+              locked: false
+            });
+          }
+        }
+
+        const matchedRadio = masterTvChannels.filter(c =>
+          /music|9x|mastiii|b4u|mtv|vh1|radio|fm|hits|sangeet|zing|tune/i.test(c.name)
+        );
+
+        masterRadioChannels = DEFAULT_RADIO_NAMES.map((rName, idx) => ({
+          name: rName,
+          url: matchedRadio[idx % Math.max(1, matchedRadio.length)]?.url || masterTvChannels[idx]?.url || "",
+          fav: false,
+          locked: false
+        })).concat(matchedRadio.map(c => ({ ...c })));
+
+        // Initially populate channels
+        allChannels = [...masterTvChannels];
+        radioChannels = [...masterRadioChannels];
+        activeList = allChannels;
+
+        if (activeList.length > 0) {
+          currentIndex = 0;
+          renderView(true);
+          playChannel(0);
+        } else {
+          showNoSignal(true);
+        }
+      } catch (err) {
+        leftList.innerHTML = `<div class="list-item active">Playlist Error</div>`;
+        showNoSignal(true);
+      }
+    }
+
+    function showNoSignal(flag) {
+      noSignalBox.style.display = flag ? "block" : "none";
+    }
+
+    function updateRadioVisualMode() {
+      if (isRadioMode) {
+        videoContainer.classList.add("radio-audio-only");
+        const ch = activeList[currentIndex];
+        if (ch && radioPlayingName) {
+          radioPlayingName.textContent = ch.name.substring(0, 20);
+        }
+      } else {
+        videoContainer.classList.remove("radio-audio-only");
+      }
+    }
+
+    function playChannel(index) {
+      if (!activeList[index]) return;
+      playingIndex = index;
+      const streamUrl = activeList[index].url;
+      showNoSignal(false);
+      updateRadioVisualMode();
+
+      if (hls) {
+        hls.destroy();
+        hls = null;
+      }
+
+      if (Hls.isSupported()) {
+        hls = new Hls({
+          manifestLoadingTimeOut: 8000,
+          levelLoadingTimeOut: 8000
+        });
+        hls.loadSource(streamUrl);
+        hls.attachMedia(video);
+        hls.on(Hls.Events.MANIFEST_PARSED, () => {
+          video.play().catch(() => {});
+          showNoSignal(false);
+        });
+        hls.on(Hls.Events.ERROR, (event, data) => {
+          if (data.fatal) showNoSignal(true);
+        });
+      } else if (video.canPlayType("application/vnd.apple.mpegurl")) {
+        video.src = streamUrl;
+        video.play().catch(() => showNoSignal(true));
+      }
+
+      video.onerror = () => showNoSignal(true);
+    }
+
+    function stopTimers() {
+      if (gameLoop) {
+        clearInterval(gameLoop);
+        gameLoop = null;
+      }
+      if (scanTimer) {
+        clearInterval(scanTimer);
+        scanTimer = null;
+      }
+    }
+
+    function renderView(scrollToActive = true) {
+      stopTimers();
+      optionPanel.style.display = "none";
+      autoscanView.style.display = "none";
+      leftList.style.display = "flex";
+      rightPanel.style.display = "flex";
+      videoContainer.style.display = "block";
+      updateRadioVisualMode();
+
+      document.getElementById("move-hint").style.display = "flex";
+      document.getElementById("ok-hint").style.display = "flex";
+
+      if (viewState === "LIST") {
+        tvScreen.classList.remove("fullscreen-mode");
+        leftList.classList.remove("no-scroll");
+        osdTitle.textContent = isRadioMode ? "Radio Channel List" : "TV Channel List";
+        document.getElementById("lbl-move").textContent = "Select";
+        document.getElementById("lbl-ok").textContent = "Enter";
+        document.getElementById("lbl-menu").textContent = "Exit";
+        document.getElementById("page-hint").style.display = "flex";
+        document.getElementById("lbl-lr").textContent = "Page";
+
+        tpInfo.innerHTML = `
+          <div>12020/V/30000</div>
+          <div>DiSEqC:Off</div>
+          <div>5064/6064</div>
+          <div>22K:Off</div>
+        `;
+
+        leftList.innerHTML = "";
+        if (activeList.length === 0) {
+          leftList.innerHTML = `<div class="list-item active">No Channels Scanned</div>`;
+          return;
+        }
+
+        activeList.forEach((ch, i) => {
+          const item = document.createElement("div");
+          item.className = "list-item" + (i === currentIndex ? " active" : "");
+          item.id = `ch-item-${i}`;
+          const numStr = String(i + 1).padStart(3, "0");
+          const badge = (ch.fav ? "♥ " : "") + (ch.locked ? "🔒 " : "");
+          const cleanName = (badge + ch.name).substring(0, 18);
+          item.innerHTML = `<span class="ch-num">${numStr}</span><span>${cleanName}</span>`;
+          item.onclick = () => {
+            if (currentIndex === i && playingIndex === i) {
+              enterFullscreen();
+            } else {
+              updateActiveChannel(i, false);
+              playChannel(i);
+            }
+          };
+          leftList.appendChild(item);
+        });
+
+        if (scrollToActive) scrollActiveIntoView();
+
+      } else if (viewState === "MENU") {
+        tvScreen.classList.remove("fullscreen-mode");
+        leftList.classList.add("no-scroll");
+        osdTitle.textContent = appSettings.menuLang === "Hindi" ? "Mukhya Menu" : "Main Menu";
+        document.getElementById("lbl-move").textContent = "Move";
+        document.getElementById("lbl-ok").textContent = "Confirm";
+        document.getElementById("lbl-menu").textContent = "Return";
+        document.getElementById("page-hint").style.display = "none";
+
+        tpInfo.innerHTML = `
+          <div>11090F/V/29500S</div>
+          <div>DiSEqC:OFF</div>
+          <div>5010V/6010A/5010P</div>
+          <div>22K:OFF</div>
+        `;
+
+        leftList.innerHTML = "";
+        MENU_ITEMS.forEach((label, idx) => {
+          const item = document.createElement("div");
+          item.className = "list-item menu-mode-item" + (idx === menuIndex ? " active" : "");
+          item.textContent = label;
+          item.onclick = () => {
+            menuIndex = idx;
+            renderView();
+            openSelectedMenuOption(MENU_ITEMS[idx]);
+          };
+          leftList.appendChild(item);
+        });
+
+      } else if (viewState === "SUBMENU") {
+        tvScreen.classList.remove("fullscreen-mode");
+        leftList.classList.add("no-scroll");
+        osdTitle.textContent = activeSubMenu;
+        document.getElementById("lbl-move").textContent = "Move";
+        document.getElementById("lbl-ok").textContent = "Select";
+        document.getElementById("lbl-menu").textContent = "Back";
+        renderSubMenuContent();
+
+      } else if (viewState === "AUTOSCAN") {
+        tvScreen.classList.remove("fullscreen-mode");
+        videoContainer.style.display = "none";
+        leftList.style.display = "none";
+        rightPanel.style.display = "none";
+        autoscanView.style.display = "flex";
+
+        osdTitle.textContent = "Auto Scan";
+        document.getElementById("move-hint").style.display = "none";
+        document.getElementById("page-hint").style.display = "none";
+        document.getElementById("ok-hint").style.display = "none";
+        document.getElementById("lbl-menu").textContent = "Cancel";
+
+        startAutoScanProcess();
+
+      } else if (viewState === "FULLSCREEN") {
+        tvScreen.classList.add("fullscreen-mode");
+        showBanner();
+      }
+    }
+
+    // Progressive Auto Scan: Channels advance one by one and save exact scanned count
+    function startAutoScanProcess() {
+      const tpEl = document.getElementById("scan-tp");
+      const srEl = document.getElementById("scan-sr");
+      const tfEl = document.getElementById("scan-tf");
+      const polEl = document.getElementById("scan-pol");
+      const barFill = document.getElementById("scan-bar-fill");
+      const pctTxt = document.getElementById("scan-percent-txt");
+      const tvBox = document.getElementById("scan-tv-list");
+      const radioBox = document.getElementById("scan-radio-list");
+
+      const transFreqs = ["10990", "11090", "11170", "11470", "11510", "11550", "12020"];
+      const symRates = ["28490", "29500", "30000"];
+
+      // Reset scanned lists so only newly scanned channels accumulate as scan progresses
+      allChannels = [];
+      radioChannels = [];
+      tvBox.innerHTML = "";
+      radioBox.innerHTML = "";
+
+      let progress = 0;
+      let tvScannedCount = 0;
+      let radioScannedCount = 0;
+
+      const totalTvPool = masterTvChannels.length;
+      const totalRadioPool = masterRadioChannels.length;
+
+      barFill.style.width = "0%";
+      pctTxt.textContent = "0%";
+
+      scanTimer = setInterval(() => {
+        progress += 1;
+
+        if (progress > 100) {
+          clearInterval(scanTimer);
+          scanTimer = null;
+          setTimeout(() => {
+            finalizeAutoScan();
+          }, 500);
+          return;
+        }
+
+        barFill.style.width = progress + "%";
+        pctTxt.textContent = progress + "%";
+
+        const tpNum = Math.max(1, Math.ceil(progress / 4));
+        tpEl.textContent = tpNum;
+        tfEl.textContent = transFreqs[(tpNum - 1) % transFreqs.length];
+        srEl.textContent = symRates[(tpNum - 1) % symRates.length];
+        polEl.textContent = tpNum % 2 === 0 ? "V" : "H";
+
+        // Calculate how many TV and Radio channels should be scanned at this percentage
+        const targetTvCount = Math.floor((progress / 100) * totalTvPool);
+        const targetRadioCount = Math.floor((progress / 100) * totalRadioPool);
+
+        // Add newly found TV channels one by one and scroll Auto Scan list forward
+        while (tvScannedCount < targetTvCount) {
+          const ch = masterTvChannels[tvScannedCount];
+          allChannels.push({ ...ch });
+          tvScannedCount++;
+
+          const cleanName = ch.name.replace(/\(.*\)/g, "").trim().toUpperCase().substring(0, 15);
+          const row = document.createElement("div");
+          row.className = "scan-ch-row";
+          row.innerHTML = `<span class="scan-ch-num">${String(tvScannedCount).padStart(3, "0")}</span><span>${cleanName}</span>`;
+          tvBox.appendChild(row);
+        }
+
+        // Keep only the latest 6 visible rows in the Auto Scan box so it advances cleanly like a real STB
+        while (tvBox.children.length > 6) {
+          tvBox.removeChild(tvBox.firstChild);
+        }
+
+        // Add newly found Radio channels one by one and scroll Auto Scan list forward
+        while (radioScannedCount < targetRadioCount) {
+          const rCh = masterRadioChannels[radioScannedCount];
+          radioChannels.push({ ...rCh });
+          radioScannedCount++;
+
+          const cleanRName = rCh.name.replace(/\(.*\)/g, "").trim().substring(0, 15);
+          const row = document.createElement("div");
+          row.className = "scan-ch-row";
+          row.innerHTML = `<span class="scan-ch-num">${String(radioScannedCount).padStart(3, "0")}</span><span>${cleanRName}</span>`;
+          radioBox.appendChild(row);
+        }
+
+        while (radioBox.children.length > 6) {
+          radioBox.removeChild(radioBox.firstChild);
+        }
+      }, 150);
+    }
+
+    function finalizeAutoScan() {
+      stopTimers();
+      // If user canceled immediately at 0 channels, keep at least 1 channel so list isn't broken
+      if (allChannels.length === 0 && masterTvChannels.length > 0) {
+        allChannels = [masterTvChannels[0]];
+      }
+      if (radioChannels.length === 0 && masterRadioChannels.length > 0) {
+        radioChannels = [masterRadioChannels[0]];
+      }
+
+      activeList = isRadioMode ? radioChannels : allChannels;
+      currentIndex = 0;
+      viewState = "LIST";
+      renderView(true);
+      playChannel(0);
+    }
+
+    function openSelectedMenuOption(optionName) {
+      if (optionName === "TV List") {
+        isRadioMode = false;
+        activeList = allChannels;
+        currentIndex = Math.min(currentIndex, Math.max(0, activeList.length - 1));
+        viewState = "LIST";
+        renderView(true);
+        playChannel(currentIndex);
+      } else if (optionName === "Radio List") {
+        isRadioMode = true;
+        activeList = radioChannels;
+        currentIndex = 0;
+        viewState = "LIST";
+        renderView(true);
+        playChannel(0);
+      } else if (optionName === "Cancel") {
+        enterFullscreen();
+      } else {
+        activeSubMenu = optionName;
+        subMenuIndex = 0;
+        viewState = "SUBMENU";
+        renderView();
+      }
+    }
+
+    function renderSubMenuContent() {
+      leftList.innerHTML = "";
+      MENU_ITEMS.forEach((label, idx) => {
+        const item = document.createElement("div");
+        item.className = "list-item menu-mode-item" + (idx === menuIndex ? " active" : "");
+        item.textContent = label;
+        item.onclick = () => {
+          menuIndex = idx;
+          openSelectedMenuOption(MENU_ITEMS[idx]);
+        };
+        leftList.appendChild(item);
+      });
+
+      optionPanel.style.display = "flex";
+      document.getElementById("page-hint").style.display = "flex";
+      document.getElementById("lbl-lr").textContent = "Change";
+
+      const ch = activeList[currentIndex] || { name: "None" };
+
+      if (activeSubMenu === "Program Setup") {
+        const setupOpts = [
+          "1. Auto Scan",
+          "2. Add New Program",
+          "3. LNB Freq: " + appSettings.lnbFreq,
+          "4. Trans Freq: " + appSettings.transponder,
+          "5. Back to Main Menu"
+        ];
+        optionPanel.innerHTML = `
+          <div>
+            <div style="color:#f5e625;font-weight:bold;margin-bottom:6px;">[ Program Setup ]</div>
+            ${setupOpts.map((t, i) => `<div class="opt-row ${i === subMenuIndex ? 'highlight' : ''}" onclick="subMenuIndex=${i};handleOkKey()">${t}</div>`).join("")}
+          </div>
+          <div>
+            <div>Signal Intensity: 92%</div>
+            <div class="bar-wrap"><div class="bar-fill" style="width:92%"></div></div>
+            <div style="margin-top:4px;">Signal Quality: 78%</div>
+            <div class="bar-wrap"><div class="bar-fill" style="width:78%"></div></div>
+          </div>
+        `;
+      } else if (activeSubMenu === "Program Edit") {
+        const editOpts = [
+          `Channel: ${ch.name.substring(0, 16)}`,
+          `1. Favorite: ${ch.fav ? "ON ♥" : "OFF"}`,
+          `2. Lock Channel: ${ch.locked ? "LOCKED 🔒" : "UNLOCKED"}`,
+          `3. Delete Current Channel`,
+          `4. Back to Main Menu`
+        ];
+        optionPanel.innerHTML = `
+          <div>
+            <div style="color:#f5e625;font-weight:bold;margin-bottom:6px;">[ Program Edit ]</div>
+            ${editOpts.map((t, i) => `<div class="opt-row ${i === subMenuIndex ? 'highlight' : ''}" onclick="subMenuIndex=${i};handleOkKey()">${t}</div>`).join("")}
+          </div>
+          <div style="font-size:0.8rem;color:#b8e2f2;">Press OK to toggle Favorite, Lock or Delete channel.</div>
+        `;
+      } else if (activeSubMenu === "Program Info") {
+        optionPanel.innerHTML = `
+          <div>
+            <div style="color:#f5e625;font-weight:bold;margin-bottom:6px;">[ Program Info ]</div>
+            <div class="opt-row"><span>Channel:</span><span>${currentIndex + 1}. ${ch.name.substring(0, 15)}</span></div>
+            <div class="opt-row"><span>Downlink Freq:</span><span>10990 MHz (H)</span></div>
+            <div class="opt-row"><span>Symbol Rate:</span><span>28490 Ksps</span></div>
+            <div class="opt-row"><span>Video/Audio PID:</span><span>5064 / 6064</span></div>
+          </div>
+          <div>
+            <div>Signal Intensity: 90%</div>
+            <div class="bar-wrap"><div class="bar-fill" style="width:90%"></div></div>
+            <div style="margin-top:4px;">Signal Quality: 76%</div>
+            <div class="bar-wrap"><div class="bar-fill" style="width:76%"></div></div>
+          </div>
+        `;
+      } else if (activeSubMenu === "Language") {
+        const langOpts = [
+          `Menu Language: < ${appSettings.menuLang} >`,
+          `Audio Language: < ${appSettings.audioLang} >`,
+          `Subtitle: < OFF >`,
+          `Back to Main Menu`
+        ];
+        optionPanel.innerHTML = `
+          <div>
+            <div style="color:#f5e625;font-weight:bold;margin-bottom:6px;">[ Language Setting ]</div>
+            ${langOpts.map((t, i) => `<div class="opt-row ${i === subMenuIndex ? 'highlight' : ''}" onclick="subMenuIndex=${i};handleOkKey()">${t}</div>`).join("")}
+          </div>
+          <div style="font-size:0.8rem;color:#b8e2f2;">Tap or press ◄► / OK to switch language.</div>
+        `;
+      } else if (activeSubMenu === "System Setting") {
+        const sysOpts = [
+          `TV System: < ${appSettings.tvSystem} >`,
+          `Screen Ratio: < ${appSettings.aspectRatio} >`,
+          `OSD Timeout: < ${appSettings.osdTimeout} >`,
+          `Restore Factory Default`,
+          `Back to Main Menu`
+        ];
+        optionPanel.innerHTML = `
+          <div>
+            <div style="color:#f5e625;font-weight:bold;margin-bottom:6px;">[ System Setting ]</div>
+            ${sysOpts.map((t, i) => `<div class="opt-row ${i === subMenuIndex ? 'highlight' : ''}" onclick="subMenuIndex=${i};handleOkKey()">${t}</div>`).join("")}
+          </div>
+          <div style="font-size:0.8rem;color:#b8e2f2;">Use OK or ◄► to adjust video & system settings.</div>
+        `;
+      } else if (activeSubMenu === "Game") {
+        optionPanel.innerHTML = `
+          <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:4px;">
+            <span style="color:#f5e625;font-weight:bold;">Box Snake Game</span>
+            <span id="game-score">Score: 0</span>
+          </div>
+          <canvas id="game-canvas" width="260" height="160"></canvas>
+          <div style="font-size:0.75rem;text-align:center;">Use ▲ ▼ ◄ ► buttons to move Snake</div>
+        `;
+        startSnakeGame();
+      } else if (activeSubMenu === "System Info") {
+        optionPanel.innerHTML = `
+          <div>
+            <div style="color:#f5e625;font-weight:bold;margin-bottom:6px;">[ System Information ]</div>
+            <div class="opt-row"><span>Satellite:</span><span>INSAT 4B</span></div>
+            <div class="opt-row"><span>H/W Version:</span><span>GX6605S V1.2</span></div>
+            <div class="opt-row"><span>S/W Version:</span><span>V3.04-IND</span></div>
+            <div class="opt-row"><span>Scanned TV / Radio:</span><span>${allChannels.length} / ${radioChannels.length}</span></div>
+            <div class="opt-row"><span>Last Update:</span><span>2026-10-16</span></div>
+          </div>
+          <div class="opt-row highlight" style="justify-content:center;" onclick="handleMenuKey()">OK / Return</div>
+        `;
+      }
+    }
+
+    function startSnakeGame() {
+      const canvas = document.getElementById("game-canvas");
+      if (!canvas) return;
+      const ctx = canvas.getContext("2d");
+      let snake = [{ x: 5, y: 5 }, { x: 4, y: 5 }, { x: 3, y: 5 }];
+      snakeDir = { x: 1, y: 0 };
+      let food = { x: 10, y: 6 };
+      let score = 0;
+
+      stopTimers();
+      gameLoop = setInterval(() => {
+        const head = {
+          x: (snake[0].x + snakeDir.x + 26) % 26,
+          y: (snake[0].y + snakeDir.y + 16) % 16
+        };
+        snake.unshift(head);
+
+        if (head.x === food.x && head.y === food.y) {
+          score += 10;
+          const scEl = document.getElementById("game-score");
+          if (scEl) scEl.textContent = "Score: " + score;
+          food = { x: Math.floor(Math.random() * 24) + 1, y: Math.floor(Math.random() * 14) + 1 };
+        } else {
+          snake.pop();
+        }
+
+        ctx.fillStyle = "#031930";
+        ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+        ctx.fillStyle = "#f5e625";
+        snake.forEach(p => ctx.fillRect(p.x * 10, p.y * 10, 9, 9));
+
+        ctx.fillStyle = "#ff4d6d";
+        ctx.fillRect(food.x * 10, food.y * 10, 9, 9);
+      }, 220);
+    }
+
+    function updateActiveChannel(newIndex, shouldScroll = true) {
+      const prevEl = document.getElementById(`ch-item-${currentIndex}`);
+      if (prevEl) prevEl.classList.remove("active");
+      currentIndex = newIndex;
+      const nextEl = document.getElementById(`ch-item-${currentIndex}`);
+      if (nextEl) {
+        nextEl.classList.add("active");
+        if (shouldScroll) scrollActiveIntoView();
+      }
+    }
+
+    function scrollActiveIntoView() {
+      const activeEl = document.getElementById(`ch-item-${currentIndex}`);
+      if (activeEl) activeEl.scrollIntoView({ block: "nearest" });
+    }
+
+    function enterFullscreen() {
+      viewState = "FULLSCREEN";
+      renderView();
+    }
+
+    function toggleFullscreenFromPreview() {
+      if (viewState === "FULLSCREEN") {
+        viewState = "LIST";
+        channelBanner.style.display = "none";
+        renderView(true);
+      } else {
+        enterFullscreen();
+      }
+    }
+
+    function showBanner() {
+      if (!activeList[currentIndex]) return;
+      document.getElementById("banner-type").textContent = isRadioMode ? "Radio Channel" : "TV Channel";
+      bannerChName.textContent = `${currentIndex + 1}. ${activeList[currentIndex].name}`;
+      channelBanner.style.display = "block";
+      clearTimeout(bannerTimeout);
+      bannerTimeout = setTimeout(() => {
+        channelBanner.style.display = "none";
+      }, 4500);
+    }
+
+    function moveSelection(delta) {
+      if (viewState === "LIST") {
+        if (activeList.length === 0) return;
+        const nextIdx = (currentIndex + delta + activeList.length) % activeList.length;
+        updateActiveChannel(nextIdx, true);
+        playChannel(nextIdx);
+      } else if (viewState === "MENU") {
+        menuIndex = (menuIndex + delta + MENU_ITEMS.length) % MENU_ITEMS.length;
+        renderView();
+      } else if (viewState === "SUBMENU") {
+        if (activeSubMenu === "Game") {
+          snakeDir = { x: 0, y: delta };
+          return;
+        }
+        subMenuIndex = Math.max(0, Math.min(4, subMenuIndex + delta));
+        renderSubMenuContent();
+      } else if (viewState === "FULLSCREEN") {
+        if (activeList.length === 0) return;
+        currentIndex = (currentIndex + delta + activeList.length) % activeList.length;
+        playChannel(currentIndex);
+        showBanner();
+      }
+    }
+
+    function handleLeftRight(dir) {
+      if (viewState === "LIST") {
+        if (activeList.length === 0) return;
+        let nextIdx = currentIndex + dir * ITEMS_PER_PAGE;
+        if (nextIdx >= activeList.length) nextIdx = 0;
+        if (nextIdx < 0) nextIdx = Math.max(0, activeList.length - ITEMS_PER_PAGE);
+        updateActiveChannel(nextIdx, true);
+        playChannel(nextIdx);
+      } else if (viewState === "SUBMENU") {
+        if (activeSubMenu === "Game") {
+          snakeDir = { x: dir, y: 0 };
+        } else {
+          handleOkKey();
+        }
+      }
+    }
+
+    function handleOkKey() {
+      if (viewState === "LIST") {
+        if (playingIndex !== currentIndex) {
+          playChannel(currentIndex);
+        } else {
+          enterFullscreen();
+        }
+      } else if (viewState === "MENU") {
+        openSelectedMenuOption(MENU_ITEMS[menuIndex]);
+      } else if (viewState === "SUBMENU") {
+        handleSubMenuAction();
+      } else if (viewState === "FULLSCREEN") {
+        viewState = "LIST";
+        channelBanner.style.display = "none";
+        renderView(true);
+      }
+    }
+
+    function handleSubMenuAction() {
+      const ch = activeList[currentIndex];
+      if (activeSubMenu === "Program Setup") {
+        if (subMenuIndex === 0) {
+          viewState = "AUTOSCAN";
+          renderView();
+        } else if (subMenuIndex === 4) {
+          handleMenuKey();
+        }
+      } else if (activeSubMenu === "Program Edit" && ch) {
+        if (subMenuIndex === 1) ch.fav = !ch.fav;
+        if (subMenuIndex === 2) ch.locked = !ch.locked;
+        if (subMenuIndex === 3 && activeList.length > 1) {
+          activeList.splice(currentIndex, 1);
+          currentIndex = Math.max(0, currentIndex - 1);
+        }
+        if (subMenuIndex === 4) {
+          handleMenuKey();
+          return;
+        }
+        renderSubMenuContent();
+      } else if (activeSubMenu === "Language") {
+        if (subMenuIndex === 0) {
+          appSettings.menuLang = appSettings.menuLang === "English" ? "Hindi" : "English";
+        } else if (subMenuIndex === 1) {
+          appSettings.audioLang = appSettings.audioLang === "Hindi" ? "English" : "Hindi";
+        } else if (subMenuIndex === 3) {
+          handleMenuKey();
+          return;
+        }
+        renderSubMenuContent();
+      } else if (activeSubMenu === "System Setting") {
+        if (subMenuIndex === 0) {
+          appSettings.tvSystem = appSettings.tvSystem === "PAL" ? "NTSC" : "PAL";
+        } else if (subMenuIndex === 1) {
+          const isFull = appSettings.aspectRatio.startsWith("Full");
+          appSettings.aspectRatio = isFull ? "Fit (4:3)" : "Full (16:9)";
+          video.style.objectFit = isFull ? "contain" : "fill";
+        } else if (subMenuIndex === 3) {
+          appSettings.tvSystem = "PAL";
+          appSettings.aspectRatio = "Full (16:9)";
+          video.style.objectFit = "fill";
+        } else if (subMenuIndex === 4) {
+          handleMenuKey();
+          return;
+        }
+        renderSubMenuContent();
+      } else {
+        handleMenuKey();
+      }
+    }
+
+    function handleMenuKey() {
+      if (viewState === "AUTOSCAN") {
+        // Save whatever number of channels have been scanned so far and exit to list
+        finalizeAutoScan();
+      } else if (viewState === "SUBMENU") {
+        viewState = "MENU";
+        renderView();
+      } else if (viewState === "LIST") {
+        viewState = "MENU";
+        menuIndex = 2;
+        renderView();
+      } else if (viewState === "MENU") {
+        viewState = "LIST";
+        renderView(true);
+      } else if (viewState === "FULLSCREEN") {
+        viewState = "MENU";
+        channelBanner.style.display = "none";
+        renderView();
+      }
+    }
+
+    window.addEventListener("keydown", (e) => {
+      switch (e.key) {
+        case "ArrowUp":
+          e.preventDefault();
+          moveSelection(-1);
+          break;
+        case "ArrowDown":
+          e.preventDefault();
+          moveSelection(1);
+          break;
+        case "ArrowLeft":
+          e.preventDefault();
+          handleLeftRight(-1);
+          break;
+        case "ArrowRight":
+          e.preventDefault();
+          handleLeftRight(1);
+          break;
+        case "Enter":
+          e.preventDefault();
+          handleOkKey();
+          break;
+        case "Escape":
+        case "m":
+        case "M":
+          e.preventDefault();
+          handleMenuKey();
+          break;
+        case "i":
+        case "I":
+          e.preventDefault();
+          showBanner();
+          break;
+      }
+    });
+
+    loadPlaylist();
+  </script>
+</body>
+</html>
